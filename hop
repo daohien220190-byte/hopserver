@@ -1,0 +1,23 @@
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game.CoreGui
+
+local Button = Instance.new("TextButton")
+Button.Size = UDim2.new(0, 85, 0, 28)
+Button.Position = UDim2.new(0, 10, 0.5, -14)
+Button.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+Button.Text = "HOP"
+Button.Font = Enum.Font.GothamBold
+Button.TextSize = 13
+Button.Active = true
+Button.Draggable = true
+Button.Parent = ScreenGui
+
+Button.MouseButton1Click:Connect(function()
+    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+end)
