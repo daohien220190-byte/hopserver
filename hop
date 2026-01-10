@@ -27,20 +27,16 @@ local function fastScan()
 	local foundTarget = false
 
 	for _, plot in ipairs(workspace.Plots:GetChildren()) do
-		local PodiumsFolder = plot:FindFirstChild("AnimalPodiums")
-		if not PodiumsFolder then continue end
+		local podiums = plot:FindFirstChild("AnimalPodiums")
+		if not podiums then continue end
 
-		for _, podium in ipairs(PodiumsFolder:GetChildren()) do
-			local base = podium:FindFirstChild("Base")
-			if not base then continue end
+		for _, podium in ipairs(podiums:GetChildren()) do
+			local overhead =
+				podium:FindFirstChild("Base")
+				and podium.Base:FindFirstChild("Spawn")
+				and podium.Base.Spawn:FindFirstChild("Attachment")
+				and podium.Base.Spawn.Attachment:FindFirstChild("AnimalOverhead")
 
-			local spawn = base:FindFirstChild("Spawn")
-			if not spawn then continue end
-
-			local attach = spawn:FindFirstChild("Attachment")
-			if not attach then continue end
-
-			local overhead = attach:FindFirstChild("AnimalOverhead")
 			if not overhead then continue end
 
 			local nameObj = overhead:FindFirstChild("DisplayName")
@@ -55,8 +51,7 @@ local function fastScan()
 				if rateVal >= MIN_RATE then
 					table.insert(results, {
 						Name = nameObj.Text,
-						RateText = genObj.Text,
-						RateVal = rateVal
+						RateText = genObj.Text
 					})
 				end
 			end
@@ -71,42 +66,40 @@ local function sendWebhook(data, foundTarget)
 
 	if #data > 0 then
 		for _, d in ipairs(data) do
-			list = list .. d.Name .. " — " .. d.RateText .. "\n"
+			list ..= d.Name .. " — " .. d.RateText .. "\n"
 		end
 	else
 		list = "No high-rate brainrot found"
 	end
-
-	local joinScript =
-"game:GetService('TeleportService'):TeleportToPlaceInstance("..placeId..", '"..game.JobId.."', game.Players.LocalPlayer)"
 
 	local targetStatus = foundTarget
 		and ("🌟 " .. TARGET_BRAINROT_NAME .. " | FOUND")
 		or ("❌ " .. TARGET_BRAINROT_NAME .. " | NOT FOUND")
 
 	local embed = {
-		["title"] = "Brainrot Notify | Bogay102 Hub",
-		["color"] = foundTarget and 65280 or 16753920,
-		["fields"] = {
+		title = "Brainrot Notify | Bogay102 Hub",
+		color = foundTarget and 65280 or 16753920,
+		fields = {
 			{
-				["name"] = "👥 Players: " .. #Players:GetPlayers() .. "/8",
-				["value"] = "```" .. list .. "```"
+				name = "👥 Players",
+				value = #Players:GetPlayers() .. "/8",
+				inline = true
 			},
 			{
-				["name"] = "🎯 Target Brainrot:",
-				["value"] = "```" .. targetStatus .. "```"
+				name = "🎯 Target Brainrot",
+				value = "```" .. targetStatus .. "```"
 			},
 			{
-				["name"] = "🆔 Job ID:",
-				["value"] = "```" .. game.JobId .. "```"
+				name = "🔥 High-rate Pets (≥10m/s)",
+				value = "```" .. list .. "```"
 			},
 			{
-				["name"] = "🌐 JOIN SERVER HERE",
-				["value"] = "[CLICK TO JOIN](https://www.roblox.com/games/"..placeId.."?jobId="..game.JobId..")"
+				name = "🆔 Job ID",
+				value = "```" .. game.JobId .. "```"
 			},
 			{
-				["name"] = "📜 Join Script:",
-				["value"] = "```lua\n" .. joinScript .. "\n```"
+				name = "🌐 Join Server",
+				value = "[CLICK TO JOIN](https://www.roblox.com/games/"..placeId.."?jobId="..game.JobId..")"
 			}
 		}
 	}
@@ -117,20 +110,13 @@ local function sendWebhook(data, foundTarget)
 		Headers = {["Content-Type"] = "application/json"},
 		Body = HttpService:JSONEncode({
 			content = "@everyone",
-			embeds = { embed }
+			embeds = {embed}
 		})
 	})
 end
 
-local hopping = false
-
 local function hopServer()
-	if hopping then return end
-	hopping = true
-
-	task.wait(5)
-
-	while task.wait(HOP_DELAY) do
+	while true do
 		local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100"
 		local ok, data = pcall(function()
 			return HttpService:JSONDecode(game:HttpGet(url))
@@ -139,24 +125,30 @@ local function hopServer()
 		if ok and data and data.data then
 			for _, s in ipairs(data.data) do
 				if s.id ~= game.JobId and s.playing < s.maxPlayers then
-					pcall(function()
-						TeleportService:TeleportToPlaceInstance(placeId, s.id, player)
-					end)
+					TeleportService:TeleportToPlaceInstance(placeId, s.id, player)
+					task.wait(3)
 					return
 				end
 			end
 		end
+
+		task.wait(2)
 	end
 end
 
 task.wait(3)
 
-local foundList, foundTarget = fastScan()
-sendWebhook(foundList, foundTarget)
+while true do
+	local foundList, foundTarget = fastScan()
 
-if foundTarget or #foundList > 0 then
-	print("Found target or high-rate pet, stopping hop")
-	return
+	if foundTarget or #foundList > 0 then
+		sendWebhook(foundList, foundTarget)
+		print("FOUND → stop hopping")
+		break
+	end
+
+	print("Nothing found → hopping...")
+	task.wait(CHECK_DELAY)
+	hopServer()
+	task.wait(HOP_DELAY)
 end
-
-hopServer()
