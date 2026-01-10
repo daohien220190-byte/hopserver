@@ -1,40 +1,162 @@
-local TeleportService = game:GetService("TeleportService")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
+local MIN_RATE = 10000000
+local TARGET_BRAINROT_NAME = "Telemorte"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1447054765409304628/q7ZF0a2K7M9MpEasfuFzyHoE6k7mNCmk3fqMwQvVVgM-eeNb4KDjRPxWr5u-6rdyudk1"
+local CHECK_DELAY = 5
+local HOP_DELAY = 2
+
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local player = Players.LocalPlayer
+local placeId = game.PlaceId
 
-local lastJobId = game.JobId
-
-if queue_on_teleport then
-    queue_on_teleport([[
-        local TeleportService = game:GetService("TeleportService")
-        local Players = game:GetService("Players")
-        local LocalPlayer = Players.LocalPlayer
-
-        local oldJobId = getgenv().LastJobId
-        if game.JobId == oldJobId then
-            task.wait(1)
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end
-    ]])
+local function parseRate(text)
+	text = text:upper():gsub("%$", ""):gsub("/%A+", ""):gsub(",", "")
+	local num, suf = text:match("([%d%.]+)([KMBT]?)")
+	num = tonumber(num) or 0
+	local mul = {K=1e3, M=1e6, B=1e9, T=1e12}
+	return num * (mul[suf] or 1)
 end
 
-getgenv().LastJobId = lastJobId
+local function nameMatch(name)
+	return string.find(string.lower(name), string.lower(TARGET_BRAINROT_NAME)) ~= nil
+end
 
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.ResetOnSpawn = false
+local function fastScan()
+	local results = {}
+	local foundTarget = false
 
-local Button = Instance.new("TextButton", ScreenGui)
-Button.Size = UDim2.new(0, 70, 0, 22)
-Button.Position = UDim2.new(0, 8, 0.5, -11)
-Button.Text = "HOP"
-Button.Font = Enum.Font.GothamBold
-Button.TextSize = 12
-Button.BackgroundColor3 = Color3.fromRGB(20,20,20)
-Button.TextColor3 = Color3.fromRGB(255,255,255)
-Button.Active = true
-Button.Draggable = true
+	for _, plot in ipairs(workspace.Plots:GetChildren()) do
+		local PodiumsFolder = plot:FindFirstChild("AnimalPodiums")
+		if not PodiumsFolder then continue end
 
-Button.MouseButton1Click:Connect(function()
-    TeleportService:Teleport(game.PlaceId, LocalPlayer)
-end)
+		for _, podium in ipairs(PodiumsFolder:GetChildren()) do
+			local base = podium:FindFirstChild("Base")
+			if not base then continue end
+
+			local spawn = base:FindFirstChild("Spawn")
+			if not spawn then continue end
+
+			local attach = spawn:FindFirstChild("Attachment")
+			if not attach then continue end
+
+			local overhead = attach:FindFirstChild("AnimalOverhead")
+			if not overhead then continue end
+
+			local nameObj = overhead:FindFirstChild("DisplayName")
+			local genObj = overhead:FindFirstChild("Generation")
+
+			if nameObj and genObj then
+				if nameMatch(nameObj.Text) then
+					foundTarget = true
+				end
+
+				local rateVal = parseRate(genObj.Text)
+				if rateVal >= MIN_RATE then
+					table.insert(results, {
+						Name = nameObj.Text,
+						RateText = genObj.Text,
+						RateVal = rateVal
+					})
+				end
+			end
+		end
+	end
+
+	return results, foundTarget
+end
+
+local function sendWebhook(data, foundTarget)
+	local list = ""
+
+	if #data > 0 then
+		for _, d in ipairs(data) do
+			list = list .. d.Name .. " — " .. d.RateText .. "\n"
+		end
+	else
+		list = "No high-rate brainrot found"
+	end
+
+	local joinScript =
+"game:GetService('TeleportService'):TeleportToPlaceInstance("..placeId..", '"..game.JobId.."', game.Players.LocalPlayer)"
+
+	local targetStatus = foundTarget
+		and ("🌟 " .. TARGET_BRAINROT_NAME .. " | FOUND")
+		or ("❌ " .. TARGET_BRAINROT_NAME .. " | NOT FOUND")
+
+	local embed = {
+		["title"] = "Brainrot Notify | Bogay102 Hub",
+		["color"] = foundTarget and 65280 or 16753920,
+		["fields"] = {
+			{
+				["name"] = "👥 Players: " .. #Players:GetPlayers() .. "/8",
+				["value"] = "```" .. list .. "```"
+			},
+			{
+				["name"] = "🎯 Target Brainrot:",
+				["value"] = "```" .. targetStatus .. "```"
+			},
+			{
+				["name"] = "🆔 Job ID:",
+				["value"] = "```" .. game.JobId .. "```"
+			},
+			{
+				["name"] = "🌐 JOIN SERVER HERE",
+				["value"] = "[CLICK TO JOIN](https://www.roblox.com/games/"..placeId.."?jobId="..game.JobId..")"
+			},
+			{
+				["name"] = "📜 Join Script:",
+				["value"] = "```lua\n" .. joinScript .. "\n```"
+			}
+		}
+	}
+
+	request({
+		Url = WEBHOOK_URL,
+		Method = "POST",
+		Headers = {["Content-Type"] = "application/json"},
+		Body = HttpService:JSONEncode({
+			content = "@everyone",
+			embeds = { embed }
+		})
+	})
+end
+
+local hopping = false
+
+local function hopServer()
+	if hopping then return end
+	hopping = true
+
+	task.wait(5)
+
+	while task.wait(HOP_DELAY) do
+		local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100"
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(game:HttpGet(url))
+		end)
+
+		if ok and data and data.data then
+			for _, s in ipairs(data.data) do
+				if s.id ~= game.JobId and s.playing < s.maxPlayers then
+					pcall(function()
+						TeleportService:TeleportToPlaceInstance(placeId, s.id, player)
+					end)
+					return
+				end
+			end
+		end
+	end
+end
+
+task.wait(3)
+
+local foundList, foundTarget = fastScan()
+sendWebhook(foundList, foundTarget)
+
+if foundTarget or #foundList > 0 then
+	print("Found target or high-rate pet, stopping hop")
+	return
+end
+
+hopServer()
