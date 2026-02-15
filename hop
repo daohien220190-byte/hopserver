@@ -1,154 +1,30 @@
-local MIN_RATE = 10000000
-local TARGET_BRAINROT_NAME = "Telemorte"
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1447054765409304628/q7ZF0a2K7M9MpEasfuFzyHoE6k7mNCmk3fqMwQvVVgM-eeNb4KDjRPxWr5u-6rdyudk1"
-local CHECK_DELAY = 5
-local HOP_DELAY = 2
-
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local player = Players.LocalPlayer
-local placeId = game.PlaceId
-
-local function parseRate(text)
-	text = text:upper():gsub("%$", ""):gsub("/%A+", ""):gsub(",", "")
-	local num, suf = text:match("([%d%.]+)([KMBT]?)")
-	num = tonumber(num) or 0
-	local mul = {K=1e3, M=1e6, B=1e9, T=1e12}
-	return num * (mul[suf] or 1)
-end
-
-local function nameMatch(name)
-	return string.find(string.lower(name), string.lower(TARGET_BRAINROT_NAME)) ~= nil
-end
-
-local function fastScan()
-	local results = {}
-	local foundTarget = false
-
-	for _, plot in ipairs(workspace.Plots:GetChildren()) do
-		local podiums = plot:FindFirstChild("AnimalPodiums")
-		if not podiums then continue end
-
-		for _, podium in ipairs(podiums:GetChildren()) do
-			local overhead =
-				podium:FindFirstChild("Base")
-				and podium.Base:FindFirstChild("Spawn")
-				and podium.Base.Spawn:FindFirstChild("Attachment")
-				and podium.Base.Spawn.Attachment:FindFirstChild("AnimalOverhead")
-
-			if not overhead then continue end
-
-			local nameObj = overhead:FindFirstChild("DisplayName")
-			local genObj = overhead:FindFirstChild("Generation")
-
-			if nameObj and genObj then
-				if nameMatch(nameObj.Text) then
-					foundTarget = true
-				end
-
-				local rateVal = parseRate(genObj.Text)
-				if rateVal >= MIN_RATE then
-					table.insert(results, {
-						Name = nameObj.Text,
-						RateText = genObj.Text
-					})
-				end
-			end
-		end
-	end
-
-	return results, foundTarget
-end
-
-local function sendWebhook(data, foundTarget)
-	local list = ""
-
-	if #data > 0 then
-		for _, d in ipairs(data) do
-			list ..= d.Name .. " — " .. d.RateText .. "\n"
-		end
-	else
-		list = "No high-rate brainrot found"
-	end
-
-	local targetStatus = foundTarget
-		and ("🌟 " .. TARGET_BRAINROT_NAME .. " | FOUND")
-		or ("❌ " .. TARGET_BRAINROT_NAME .. " | NOT FOUND")
-
-	local embed = {
-		title = "Brainrot Notify | Bogay102 Hub",
-		color = foundTarget and 65280 or 16753920,
-		fields = {
-			{
-				name = "👥 Players",
-				value = #Players:GetPlayers() .. "/8",
-				inline = true
-			},
-			{
-				name = "🎯 Target Brainrot",
-				value = "```" .. targetStatus .. "```"
-			},
-			{
-				name = "🔥 High-rate Pets (≥10m/s)",
-				value = "```" .. list .. "```"
-			},
-			{
-				name = "🆔 Job ID",
-				value = "```" .. game.JobId .. "```"
-			},
-			{
-				name = "🌐 Join Server",
-				value = "[CLICK TO JOIN](https://www.roblox.com/games/"..placeId.."?jobId="..game.JobId..")"
-			}
-		}
-	}
-
-	request({
-		Url = WEBHOOK_URL,
-		Method = "POST",
-		Headers = {["Content-Type"] = "application/json"},
-		Body = HttpService:JSONEncode({
-			content = "@everyone",
-			embeds = {embed}
-		})
-	})
-end
-
-local function hopServer()
-	while true do
-		local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100"
-		local ok, data = pcall(function()
-			return HttpService:JSONDecode(game:HttpGet(url))
-		end)
-
-		if ok and data and data.data then
-			for _, s in ipairs(data.data) do
-				if s.id ~= game.JobId and s.playing < s.maxPlayers then
-					TeleportService:TeleportToPlaceInstance(placeId, s.id, player)
-					task.wait(3)
-					return
-				end
-			end
-		end
-
-		task.wait(2)
-	end
-end
-
-task.wait(3)
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local camera = workspace.CurrentCamera
+local delayTime = 60
 
 while true do
-	local foundList, foundTarget = fastScan()
-
-	if foundTarget or #foundList > 0 then
-		sendWebhook(foundList, foundTarget)
-		print("FOUND → stop hopping")
-		break
-	end
-
-	print("Nothing found → hopping...")
-	task.wait(CHECK_DELAY)
-	hopServer()
-	task.wait(HOP_DELAY)
+	local viewportSize = camera.ViewportSize
+	
+	local centerX = viewportSize.X / 2
+	local centerY = viewportSize.Y / 2
+	
+	VirtualInputManager:SendMouseButtonEvent(
+		centerX,
+		centerY,
+		0,
+		true,
+		game,
+		0
+	)
+	
+	VirtualInputManager:SendMouseButtonEvent(
+		centerX,
+		centerY,
+		0,
+		false,
+		game,
+		0
+	)
+	
+	wait(delayTime)
 end
